@@ -2,26 +2,45 @@ import argparse
 import re
 import tkinter as tk
 
+import nltk
+from nltk.tokenize import sent_tokenize
+
+
 def split_paragraphs(text):
+    # Marked text: sentence markers define boundaries.
+    if re.search(r"⟦S\d+⟧", text):
+        return [
+            p.strip()
+            for p in re.split(r"⟦S\d+⟧", text)
+            if p.strip()
+        ]
+
+    # Unmarked text: blank lines define paragraph boundaries.
     return [
         p.strip()
         for p in re.split(r"\n\s*\n", text)
         if p.strip()
     ]
 
+def split_sentences(text: str, language: str) -> str:
+    """Split text into sentences using NLTK Punkt."""
+    try:
+        sentences = sent_tokenize(text, language=language)
+    except LookupError:
+        print(
+            f"\nNLTK sentence tokenizer data for language "
+            f"'{language}' is not installed.\n"
+            f"Run:\n\n"
+            f"    python -c \"import nltk; nltk.download('punkt_tab')\"\n"
+        )
+        raise SystemExit(1)
 
-def split_sentences(text):
-    # Split after sentence-ending punctuation: . ! ?
-    return [
-        line.strip()
-        for line in re.split(r"(?<=[.!?])\s+", text.strip())
-        if line.strip()
-    ]
+    return "\n\n".join(
+        f"⟦S{i}⟧ {sentence.strip()}"
+        for i, sentence in enumerate(sentences, start=1)
+        if sentence.strip()
+    )
 
-def add_newlines_after_periods(text):
-    # Replace spaces/tabs after periods with a newline.
-    # Leave existing newlines unchanged.
-    return re.sub(r"\.[ \t]+", ".\n", text)
 
 def interleave(items):
     if len(items) % 2 != 0:
@@ -40,22 +59,14 @@ def interleave(items):
     return "\n\n\n".join(pairs)
 
 
-def interleave_file(filename, mode):
+def interleave_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
         text = f.read()
 
-    if mode == "paragraph":
-        items = split_paragraphs(text)
-        return interleave(items)
-
-    elif mode == "sentence":
-        items = split_sentences(text)
-        return interleave(items)
-
-    elif mode == "newline":
-        return add_newlines_after_periods(text)
-
+    items = split_paragraphs(text)
     return interleave(items)
+
+
 
 def copy_to_clipboard(text):
     root = tk.Tk()
@@ -66,6 +77,7 @@ def copy_to_clipboard(text):
     root.after(100, root.destroy)
     root.mainloop()
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Interleave original and translated text."
@@ -73,11 +85,27 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["paragraph", "sentence", "newline"],
-        default="paragraph",
-        help="Interleave by paragraph or sentence, or add newline after periods",
+        choices=["interleave", "split_sentence"],
+        default="interleave",
+        help="Interleave by paragraph, or split document into paragraphs of each sentence",
     )
 
+    parser.add_argument(
+        "--language",
+        default="english",
+        help=(
+            "Language used for sentence segmentation by NLTK "
+            "(default: english). Examples: english, french, german"
+        ),
+    )
+
+    parser.add_argument(
+        "-i",
+        "--input",
+        default="input.txt",
+        help="Input TXT file (default: input.txt)",
+    )
+    
     parser.add_argument(
         "-o",
         "--output",
@@ -86,7 +114,12 @@ def main():
 
     args = parser.parse_args()
 
-    result = interleave_file("input.txt", args.mode)
+    if args.mode == "split_sentence":
+        with open(args.input, "r", encoding="utf-8") as f:
+            text = f.read()
+            result = split_sentences(text, args.language)
+    else:
+        result = interleave_file(args.input)
 
     copy_to_clipboard(result)
 
@@ -99,5 +132,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
