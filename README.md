@@ -54,24 +54,17 @@ The script assumes:
 * first half contains original text
 * second half contains corresponding translations
 
-Then use one of the 3 following modes. The result of each mode is automatically copied into clipboard.
-### 3. Paragraph mode
+Then use one of the supported modes. The result is automatically copied to the clipboard.
 
-Paragraph mode is default:
+### 3. Interleave mode
+
+Interleave mode is the default:
 
 ```bash
 python3 interleave.py
 ```
 
-It treats blocks separated by blank lines as paragraphs.
-
-You can also specify it explicitly:
-
-```bash
-python3 interleave.py --mode paragraph
-```
-
-Output:
+It treats blocks separated by marker `⟦Si⟧` (or blank lines if there is none) as paragraphs and interleaves them:
 
 ```text
 Original paragraph 1
@@ -84,85 +77,54 @@ Original paragraph 2
 Translated paragraph 2
 ```
 
-### 4. Sentence mode
-
-Sentence mode splits text into individual sentences based on sentence-ending punctuation (`.`, `!`, `?`):
+You can also specify it explicitly:
 
 ```bash
-python3 interleave.py --mode sentence
+python3 interleave.py --mode interleave
+```
+
+### 4. Sentence-splitting mode
+
+Sentence-splitting mode uses NLTK's sentence tokenizer to split the text into sentences and label each one with a marker such as `⟦S1⟧`:
+
+```bash
+python3 interleave.py --mode split_sentence --language english
 ```
 
 For example:
 
 ```text
-Original sentence one. Original sentence two.
-
-Translated sentence one. Translated sentence two.
+Original sentence one. Original sentence two. Translated sentence one. Translated sentence two.
 ```
 
 becomes:
 
 ```text
-Original sentence one.
+⟦S1⟧ Original sentence one.
 
-Translated sentence one.
+⟦S2⟧ Original sentence two.
 
+⟦S3⟧ Translated sentence one.
 
-Original sentence two.
-
-Translated sentence two.
+⟦S4⟧ Translated sentence two.
 ```
 
-### 5. Newline mode
-
-Newline mode adds a newline after each period (`.`) when one is not already present. It does not interleave or otherwise reorder the text.
-
-This is useful when Google Translate has merged several sentences from the original document into a single line. Run newline mode first to restore one sentence per line, then apply sentence mode.
-
-```bash
-python3 interleave.py --mode newline
 ### 5. Save result
 
-By default, result is printed to terminal.
+By default, the result is printed to the terminal.
 
-To save result to TXT file:
+To save the result to a TXT file:
 
 ```bash
 python3 interleave.py -o result.txt
 ```
 
-Works with either mode:
+This works with either mode:
 
 ```bash
-python3 interleave.py --mode sentence -o result.txt
+python3 interleave.py --mode split_sentence -o result.txt
 ```
 
-## Example
-
-### Input
-
-```text
-This is paragraph one.
-
-This is paragraph two.
-
-Ceci est le paragraphe un.
-
-Ceci est le paragraphe deux.
-```
-
-### Output
-
-```text
-This is paragraph one.
-
-Ceci est le paragraphe un.
-
-
-This is paragraph two.
-
-Ceci est le paragraphe deux.
-```
 
 ## Why this exists
 
@@ -173,6 +135,8 @@ This is a small utility built around a simple idea:
 --> Easier to read/compare/make notes.
 
 It is intended for language learners, but it can be useful for anyone working with bilingual documents.
+
+These tasks can be done by any LLM. But the tool saves some tokens and electricity ;)
 
 ## License
 
