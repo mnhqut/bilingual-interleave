@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bilingual Interleave</title>
+<style>
+  :root {
+    --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6b66; --line: #d6d4cc;
+    --panel: #ffffff; --accent: #2d5be3; --err: #b3261e; --ok: #1e7b34;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #161614; --fg: #ecebe6; --muted: #9b9a93; --line: #3a3a36;
+      --panel: #1f1f1c; --accent: #7ea2ff; --err: #ff8a80; --ok: #7bd389;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #161614; --fg: #ecebe6; --muted: #9b9a93; --line: #3a3a36;
+    --panel: #1f1f1c; --accent: #7ea2ff; --err: #ff8a80; --ok: #7bd389;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 0 0 16px; }
+  legend { padding: 0 6px; color: var(--muted); }
+  label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; }
+  select, input[type="text"], textarea, button {
+    font: inherit; color: inherit; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px;
+  }
+  textarea { width: 100%; min-height: 240px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, textarea:focus-visible, label:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }
+  #status { min-height: 1.5em; color: var(--muted); }
+  #status.error { color: var(--err); }
+  #status.ok { color: var(--ok); }
+  #lang { min-width: 220px; }
+  #langBox[hidden] { display: none; }
+  #output { white-space: pre-wrap; min-height: 160px; }
+  .hint { color: var(--muted); font-size: 14px; }
+  @media (max-width: 480px) { label { margin-right: 10px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bilingual Interleave</h1>
+  <p class="lead">Put original text first, then its translation. Get them interleaved like a bilingual book. Runs entirely in your browser.</p>
+
+  <fieldset>
+    <legend>Mode</legend>
+    <label><input type="radio" name="mode" value="interleave" checked> Interleave</label>
+    <label><input type="radio" name="mode" value="split_sentence"> Split into sentences</label>
+    <div id="langBox" hidden>
+      <label for="lang">Sentence language</label>
+      <select id="lang" size="5">
+        <option value="auto" selected>Auto-detect</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+        <option value="ru">Русский</option>
+        <option value="ja">日本語</option>
+        <option value="zh">中文</option>
+        <option value="ko">한국어</option>
+      </select>
+    </div>
+    <p class="hint" id="modeHint">Blocks separated by ⟦Si⟧ markers, or blank lines, are paired: first half original, second half translation.</p>
+  </fieldset>
+
+  <label for="input">Input text</label>
+  <textarea id="input" spellcheck="false" placeholder="Original paragraph 1&#10;&#10;Original paragraph 2&#10;&#10;Translated paragraph 1&#10;&#10;Translated paragraph 2"></textarea>
+
+  <div class="row">
+    <button class="primary" id="runBtn" type="button">Convert</button>
+    <button id="fileBtn" type="button">Open .txt file…</button>
+    <input id="file" type="file" accept=".txt,text/plain" hidden>
+    <button id="clearBtn" type="button">Clear</button>
+  </div>
+
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <label for="output">Result</label>
+  <textarea id="output" readonly spellcheck="false"></textarea>
+
+  <div class="row">
+    <button id="copyBtn" type="button">Copy result</button>
+    <button id="saveBtn" type="button">Download .txt</button>
+  </div>
+</main>
+
+<script src="interleave-core.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const input = $("input"), output = $("output"), status = $("status");
+  const modeHints = {
+    interleave: "Blocks separated by ⟦Si⟧ markers, or blank lines, are paired: first half original, second half translation.",
+    split_sentence: "Splits text into sentences and labels each one ⟦S1⟧, ⟦S2⟧… ready to rearrange and interleave.",
+  };
+
+  function currentMode() {
+    return document.querySelector('input[name="mode"]:checked').value;
+  }
+
+  function setStatus(msg, kind) {
+    status.textContent = msg;
+    status.className = kind || "";
+  }
+
+  function convert() {
+    const text = input.value;
+    if (!text.trim()) {
+      output.value = "";
+      setStatus("Input is empty.", "error");
+      return;
+    }
+    try {
+      const mode = currentMode();
+      const lang = $("lang").value;
+      output.value = InterleaveCore.run(text, mode, lang);
+      if (mode === "split_sentence") {
+        const found = lang === "auto" ? InterleaveCore.detectLanguages(text).join(", ") : lang;
+        setStatus(`Done. Language: ${found}.`, "ok");
+        return;
+      }
+      setStatus(`Done. ${InterleaveCore.splitParagraphs(text).length} block(s) in input.`, "ok");
+    } catch (err) {
+      output.value = "";
+      setStatus(err.message + ". Check that each original has a matching translation.", "error");
+    }
+  }
+
+  async function copyResult() {
+    if (!output.value) return setStatus("Nothing to copy. Convert first.", "error");
+    try {
+      await navigator.clipboard.writeText(output.value);
+      setStatus("Copied to clipboard.", "ok");
+    } catch (_) {
+      output.select();
+      setStatus("Clipboard blocked by browser. Press Ctrl+C / Cmd+C to copy the selected text.", "error");
+    }
+  }
+
+  function download() {
+    if (!output.value) return setStatus("Nothing to save. Convert first.", "error");
+    const blob = new Blob([output.value], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = currentMode() === "split_sentence" ? "sentences.txt" : "result.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  $("langBox").hidden = currentMode() !== "split_sentence";
+  $("runBtn").addEventListener("click", convert);
+  $("copyBtn").addEventListener("click", copyResult);
+  $("saveBtn").addEventListener("click", download);
+  $("clearBtn").addEventListener("click", () => {
+    input.value = ""; output.value = ""; setStatus("");
+  });
+  $("fileBtn").addEventListener("click", () => $("file").click());
+  $("file").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    input.value = await f.text();
+    setStatus(`Loaded ${f.name}.`, "ok");
+  });
+  document.querySelectorAll('input[name="mode"]').forEach((r) =>
+    r.addEventListener("change", () => {
+      $("modeHint").textContent = modeHints[currentMode()];
+      $("langBox").hidden = currentMode() !== "split_sentence";
+      output.value = "";
+    })
+  );
+})();
+</script>
+</body>
+</html>
