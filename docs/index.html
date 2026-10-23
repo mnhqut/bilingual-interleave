@@ -45,6 +45,9 @@
   #lang { min-width: 220px; }
   #langBox[hidden] { display: none; }
   #output { white-space: pre-wrap; min-height: 160px; }
+  #transBox[hidden], #resultBox[hidden], #moveBtn[hidden] { display: none; }
+  #trans { min-height: 160px; }
+  a { color: var(--accent); }
   .hint { color: var(--muted); font-size: 14px; }
   @media (max-width: 480px) { label { margin-right: 10px; } }
 </style>
@@ -87,12 +90,28 @@
 
   <div id="status" role="status" aria-live="polite"></div>
 
-  <label for="output">Result</label>
-  <textarea id="output" readonly spellcheck="false"></textarea>
+  <div id="transBox" hidden>
+    <label for="trans">Translation</label>
+    <p class="hint">Copy the sentences above (button below), translate with
+      <a href="https://translate.google.com/" target="_blank" rel="noopener">Google Translate</a> or
+      <a href="https://www.deepl.com/translator" target="_blank" rel="noopener">DeepL</a>,
+      then paste the translation here. Keep the blank lines between sentences.</p>
+    <textarea id="trans" spellcheck="false" placeholder="Paste translation here"></textarea>
+    <div class="row">
+      <button id="copySrcBtn" type="button">Copy sentences for translation</button>
+      <button class="primary" id="interBtn" type="button">Interleave</button>
+    </div>
+  </div>
 
-  <div class="row">
-    <button id="copyBtn" type="button">Copy result</button>
-    <button id="saveBtn" type="button">Download .txt</button>
+  <div id="resultBox">
+    <label for="output">Result</label>
+    <textarea id="output" readonly spellcheck="false"></textarea>
+
+    <div class="row">
+      <button id="copyBtn" type="button">Copy result</button>
+      <button id="saveBtn" type="button">Download .txt</button>
+      <button class="primary" id="moveBtn" type="button" hidden>Move to interleave →</button>
+    </div>
   </div>
 </main>
 
@@ -116,6 +135,7 @@
   }
 
   function convert() {
+    $("resultBox").hidden = false;
     const text = input.value;
     if (!text.trim()) {
       output.value = "";
@@ -126,6 +146,7 @@
       const mode = currentMode();
       const lang = $("lang").value;
       output.value = InterleaveCore.run(text, mode, lang);
+      $("moveBtn").hidden = mode !== "split_sentence";
       if (mode === "split_sentence") {
         const found = lang === "auto" ? InterleaveCore.detectLanguages(text).join(", ") : lang;
         setStatus(`Done. Language: ${found}.`, "ok");
@@ -136,6 +157,50 @@
       output.value = "";
       setStatus(err.message + ". Check that each original has a matching translation.", "error");
     }
+  }
+
+  function setMode(mode) {
+    document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
+    $("modeHint").textContent = modeHints[mode];
+    $("langBox").hidden = mode !== "split_sentence";
+  }
+
+  function moveToInterleave() {
+    input.value = output.value;
+    output.value = "";
+    setMode("interleave");
+    $("moveBtn").hidden = true;
+    $("resultBox").hidden = true;
+    $("transBox").hidden = false;
+    $("trans").focus();
+    setStatus("Sentences moved to input. Paste the translation below.", "ok");
+  }
+
+  async function copySentences() {
+    // Markers may get mangled by translators; blank lines survive.
+    const plain = InterleaveCore.splitParagraphs(input.value).join("\n\n");
+    try {
+      await navigator.clipboard.writeText(plain);
+      setStatus("Sentences copied (without markers). Paste into the translator.", "ok");
+    } catch (_) {
+      setStatus("Clipboard blocked by browser. Copy the input text manually.", "error");
+    }
+  }
+
+  function interleaveWithTranslation() {
+    if (!input.value.trim() || !$("trans").value.trim()) {
+      return setStatus("Need both the original and the translation.", "error");
+    }
+    // Split each side on its own so lost markers in the translation do not matter.
+    const a = InterleaveCore.splitParagraphs(input.value);
+    const b = InterleaveCore.splitParagraphs($("trans").value);
+    if (a.length !== b.length) {
+      output.value = "";
+      return setStatus(`Original has ${a.length} block(s), translation has ${b.length}. They must match.`, "error");
+    }
+    output.value = InterleaveCore.interleave(a.concat(b));
+    $("resultBox").hidden = false;
+    setStatus(`Done. ${a.length} pair(s).`, "ok");
   }
 
   async function copyResult() {
@@ -163,10 +228,15 @@
 
   $("langBox").hidden = currentMode() !== "split_sentence";
   $("runBtn").addEventListener("click", convert);
+  $("moveBtn").addEventListener("click", moveToInterleave);
+  $("copySrcBtn").addEventListener("click", copySentences);
+  $("interBtn").addEventListener("click", interleaveWithTranslation);
   $("copyBtn").addEventListener("click", copyResult);
   $("saveBtn").addEventListener("click", download);
   $("clearBtn").addEventListener("click", () => {
-    input.value = ""; output.value = ""; setStatus("");
+    input.value = ""; output.value = ""; $("trans").value = "";
+    $("transBox").hidden = true; $("moveBtn").hidden = true;
+    $("resultBox").hidden = false; setStatus("");
   });
   $("fileBtn").addEventListener("click", () => $("file").click());
   $("file").addEventListener("change", async (e) => {
@@ -180,6 +250,9 @@
       $("modeHint").textContent = modeHints[currentMode()];
       $("langBox").hidden = currentMode() !== "split_sentence";
       output.value = "";
+      $("moveBtn").hidden = true;
+      $("transBox").hidden = true;
+      $("resultBox").hidden = false;
     })
   );
 })();
