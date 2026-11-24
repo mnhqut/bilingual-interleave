@@ -85,7 +85,13 @@ python -c "import nltk; nltk.download('punkt_tab')"   # one-time, for split mode
 python3 interleave.py                                  # interleave input.txt
 python3 interleave.py --mode split_sentence --language english
 python3 interleave.py -i other.txt -o result.txt
+
+# one step: split → translate (no API key) → interleave
+python3 interleave.py --mode translate --target fr
+python3 interleave.py --mode translate --source en --target vi --engine microsoft
 ```
+
+`translate` mode sends your text to public web translation endpoints (Google, Microsoft Edge), batched, with automatic failover. Same approach as FluentRead; see [translation engine.md](translation%20engine.md). No key needed, but endpoints are unofficial and may rate-limit or change.
 
 The result is copied to your clipboard and printed (or saved with `-o`).
 
@@ -112,6 +118,7 @@ Sentence-split output can be fed into Google Translate (or another Translation p
 | Path | Purpose |
 | --- | --- |
 | `interleave.py` | Command-line tool (NLTK sentence segmentation). |
+| `translate_engine.py` | Key-less translation engines (Google, Microsoft) with batching and failover. |
 | `web/` | Static browser version: `index.html` + `interleave-core.js`. |
 | `web/PROBLEMS.md` | Design notes and known differences from the Python version. |
 

@@ -1,6 +1,6 @@
 # Bilingual Interleave (web)
 
-Static browser version of `../interleave.py`. No install, no server, no network calls.
+Static browser version of `../interleave.py`. No install, no server. Network is used only by the optional "Translate + interleave" mode.
 
 ## Run locally
 Open `index.html` directly in a browser, or serve the folder:
@@ -11,10 +11,10 @@ Then visit http://localhost:8000.
 
 ## Deploy
 Copy the `web/` folder to any static host (GitHub Pages, Netlify, Cloudflare Pages, nginx).
-No build step. Files: `index.html`, `interleave-core.js`.
+No build step. Files: `index.html`, `interleave-core.js`, `translate-engine.js`.
 
 ## Test
-    node --test web/test/
+    node --test docs/test/core.test.js docs/test/translate.test.js
 
 # Sentence splitting differs from NLTK Punkt of .py implementation
 Punkt is a learned model (trained abbreviation list + collocation stats). Browser port is a rule-based heuristic, deliberately conservative: when unsure it does NOT split.
@@ -45,3 +45,7 @@ Languages: English, Spanish, French, German, Russian, Japanese, Chinese, Korean.
   - `……` and `—` are not terminators in CJK.
   - Italian, Portuguese, Arabic, Thai, etc.: undetected, English rules apply.
 - Validation: `node --test web/test/core.test.js` (17 tests, one per language). Parity vs NLTK checked only on an English 5-line corpus; other languages not compared against NLTK.
+# Translate mode
+Port of `../translate_engine.py`. Browser calls Google (`translate.googleapis.com/translate_a/t`) and Microsoft Edge (`edge.microsoft.com/translate/translatetext`) directly; both reply with `Access-Control-Allow-Origin: *`, so no proxy is needed. Batches of <=32 items / 4000 chars, failover between engines, 60 s cooldown per failed engine.
+- Unofficial endpoints: may rate-limit or change. Text leaves the browser, unlike the other modes.
+- Input with blank lines or `⟦Si⟧` markers is translated block by block; otherwise it is split into sentences first.

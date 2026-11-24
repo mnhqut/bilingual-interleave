@@ -5,6 +5,8 @@ import tkinter as tk
 import nltk
 from nltk.tokenize import sent_tokenize
 
+from translate_engine import ENGINES, TranslationError, translate_texts
+
 
 def split_paragraphs(text):
     # Marked text: sentence markers define boundaries.
@@ -59,6 +61,20 @@ def interleave(items):
     return "\n\n\n".join(pairs)
 
 
+def translate_file(text, language, source, target, engines):
+    """Segment, translate with key-less engines, interleave."""
+    if re.search(r"⟦S\d+⟧", text) or re.search(r"\n\s*\n", text.strip()):
+        originals = split_paragraphs(text)
+    else:
+        originals = [s.strip() for s in split_sentences(text, language).split("\n\n")]
+        originals = [re.sub(r"^⟦S\d+⟧\s*", "", s) for s in originals if s]
+    try:
+        translations = translate_texts(originals, source, target, engines)
+    except TranslationError as exc:
+        raise SystemExit(f"Translation failed: {exc}")
+    return interleave(originals + translations)
+
+
 def interleave_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
         text = f.read()
@@ -85,7 +101,7 @@ def main():
 
     parser.add_argument(
         "--mode",
-        choices=["interleave", "split_sentence"],
+        choices=["interleave", "split_sentence", "translate"],
         default="interleave",
         help="Interleave by paragraph, or split document into paragraphs of each sentence",
     )
@@ -97,6 +113,24 @@ def main():
             "Language used for sentence segmentation by NLTK "
             "(default: english). Examples: english, french, german"
         ),
+    )
+
+    parser.add_argument(
+        "--source",
+        default="auto",
+        help="translate mode: source language code (default: auto-detect)",
+    )
+
+    parser.add_argument(
+        "--target",
+        default="en",
+        help="translate mode: target language code, e.g. en, fr, vi (default: en)",
+    )
+
+    parser.add_argument(
+        "--engine",
+        default=",".join(ENGINES),
+        help="translate mode: comma-separated engines in failover order (default: %(default)s)",
     )
 
     parser.add_argument(
@@ -118,6 +152,14 @@ def main():
         with open(args.input, "r", encoding="utf-8") as f:
             text = f.read()
             result = split_sentences(text, args.language)
+    elif args.mode == "translate":
+        engines = [e.strip() for e in args.engine.split(",") if e.strip()]
+        unknown = [e for e in engines if e not in ENGINES]
+        if unknown:
+            parser.error(f"unknown engine(s): {', '.join(unknown)}")
+        with open(args.input, "r", encoding="utf-8") as f:
+            text = f.read()
+        result = translate_file(text, args.language, args.source, args.target, engines)
     else:
         result = interleave_file(args.input)
 

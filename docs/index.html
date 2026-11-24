@@ -43,7 +43,7 @@
   #status.error { color: var(--err); }
   #status.ok { color: var(--ok); }
   #lang { min-width: 220px; }
-  #langBox[hidden] { display: none; }
+  #langBox[hidden], #trBox[hidden] { display: none; }
   #output { white-space: pre-wrap; min-height: 160px; }
   #transBox[hidden], #resultBox[hidden], #moveBtn[hidden] { display: none; }
   #trans { min-height: 160px; }
@@ -59,8 +59,9 @@
 
   <fieldset>
     <legend>Mode</legend>
-    <label><input type="radio" name="mode" value="interleave" checked> Interleave</label>
+    <label><input type="radio" name="mode" value="interleave" checked> Interleave manually</label>
     <label><input type="radio" name="mode" value="split_sentence"> Split into sentences</label>
+    <label><input type="radio" name="mode" value="translate"> Translate + interleave</label>
     <div id="langBox" hidden>
       <label for="lang">Sentence language</label>
       <select id="lang" size="5">
@@ -74,6 +75,15 @@
         <option value="zh">中文</option>
         <option value="ko">한국어</option>
       </select>
+    </div>
+    <div id="trBox" hidden>
+      <label for="srcLang">From</label>
+      <select id="srcLang">
+        <option value="auto" selected>Auto-detect</option>
+      </select>
+      <label for="tgtLang">To</label>
+      <select id="tgtLang"></select>
+      <p class="hint">Sends your text to public Google / Microsoft translation web endpoints from your browser (no key; may rate-limit). Don't use for private text.</p>
     </div>
     <p class="hint" id="modeHint">Blocks separated by ⟦Si⟧ markers, or blank lines, are paired: first half original, second half translation.</p>
   </fieldset>
@@ -116,14 +126,27 @@
 </main>
 
 <script src="interleave-core.js"></script>
+<script src="translate-engine.js"></script>
 <script>
 (function () {
   const $ = (id) => document.getElementById(id);
   const input = $("input"), output = $("output"), status = $("status");
+  const placeholders = {
+    interleave: "Original paragraph 1\n\nOriginal paragraph 2\n\nTranslated paragraph 1\n\nTranslated paragraph 2",
+    split_sentence: "Paste the original text to split into sentences",
+    translate: "Paste the original text only. Splitting and translation are done automatically.",
+  };
   const modeHints = {
     interleave: "Blocks separated by ⟦Si⟧ markers, or blank lines, are paired: first half original, second half translation.",
     split_sentence: "Splits text into sentences and labels each one ⟦S1⟧, ⟦S2⟧… ready to rearrange and interleave.",
+    translate: "Paste only the original. It is split into sentences (or blocks, if it has blank lines or ⟦Si⟧ markers), translated, and interleaved in one step.",
   };
+
+  const TR_LANGS = [["en","English"],["es","Español"],["fr","Français"],["de","Deutsch"],["it","Italiano"],["pt","Português"],["ru","Русский"],["ja","日本語"],["zh-CN","中文(简体)"],["zh-TW","中文(繁體)"],["ko","한국어"],["vi","Tiếng Việt"],["ar","العربية"],["hi","हिन्दी"],["id","Bahasa Indonesia"],["th","ไทย"],["tr","Türkçe"],["nl","Nederlands"],["pl","Polski"],["uk","Українська"]];
+  for (const [code, name] of TR_LANGS) {
+    $("srcLang").add(new Option(name, code));
+    $("tgtLang").add(new Option(name, code, false, code === "en"));
+  }
 
   function currentMode() {
     return document.querySelector('input[name="mode"]:checked').value;
@@ -134,6 +157,27 @@
     status.className = kind || "";
   }
 
+  async function translateAndInterleave(text) {
+    const marked = /⟦S\d+⟧/.test(text) || /\n\s*\n/.test(text.trim());
+    const originals = marked ? InterleaveCore.splitParagraphs(text) : InterleaveCore.splitSentenceList(text, "auto");
+    const src = $("srcLang").value, tgt = $("tgtLang").value;
+    const btn = $("runBtn");
+    btn.disabled = true;
+    try {
+      const translations = await TranslateEngine.translateTexts(originals, {
+        source: src, target: tgt,
+        onProgress: (d, t) => setStatus(`Translating… ${d}/${t}`),
+      });
+      output.value = InterleaveCore.interleave(originals.concat(translations));
+      setStatus(`Done. ${originals.length} pair(s).`, "ok");
+    } catch (err) {
+      output.value = "";
+      setStatus("Translation failed: " + err.message, "error");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function convert() {
     $("resultBox").hidden = false;
     const text = input.value;
@@ -141,6 +185,10 @@
       output.value = "";
       setStatus("Input is empty.", "error");
       return;
+    }
+    if (currentMode() === "translate") {
+      setStatus("Translating…");
+      return translateAndInterleave(text);
     }
     try {
       const mode = currentMode();
@@ -163,6 +211,8 @@
     document.querySelector(`input[name="mode"][value="${mode}"]`).checked = true;
     $("modeHint").textContent = modeHints[mode];
     $("langBox").hidden = mode !== "split_sentence";
+    $("trBox").hidden = mode !== "translate";
+    input.placeholder = placeholders[mode];
   }
 
   function moveToInterleave() {
@@ -249,6 +299,8 @@
     r.addEventListener("change", () => {
       $("modeHint").textContent = modeHints[currentMode()];
       $("langBox").hidden = currentMode() !== "split_sentence";
+      $("trBox").hidden = currentMode() !== "translate";
+      input.placeholder = placeholders[currentMode()];
       output.value = "";
       $("moveBtn").hidden = true;
       $("transBox").hidden = true;
